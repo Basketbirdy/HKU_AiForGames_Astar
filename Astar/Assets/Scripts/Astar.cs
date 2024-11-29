@@ -5,11 +5,12 @@ using System.Linq;
 
 public class Astar
 {
-    private List<Node> openList;    // list of Node that need to be evaluated
-    private List<Node> closedList;  // list of Node that have already been evaluated
+    private List<Node> openList;    // list of nodes to be evaluated
+    private List<Node> closedList;  // list of nodes that have been evaluated
 
     /// <summary>
     /// TODO: Implement this function so that it returns a list of Vector2Int positions which describes a path from the startPos to the endPos
+    /// <br></br>
     /// Note that you will probably need to add some helper functions
     /// </summary>
     /// <param name="startPos"></param>
@@ -18,20 +19,20 @@ public class Astar
     /// <returns></returns>
     public List<Vector2Int> FindPathToTarget(Vector2Int startPos, Vector2Int endPos, Cell[,] grid)
     {
+        openList = new List<Node>();    // initialize a list of nodes to be evaluated
+        closedList = new List<Node>();  // initialize a list of nodes that have been evaluated
 
-        openList = new List<Node>();
-        closedList = new List<Node>();
-
-        Node currentNode = null;
+        Node currentNode = null;        // initialize the node that a single iteration looks at
 
         // add start node to OPEN list
         openList.Add(new Node(startPos, null, 0, Heuristic(startPos, endPos)));
-        Debug.Log($"Start node: {openList[0].position}; h-cost: {openList[0].HScore}");
 
         // loop
         int count = 0;
         while (openList.Count > 0)
         {
+            // set the current node to the node in openList with the lowest f-score. (is startNode in first iteration)
+                // if there are multiple nodes with the same f-score, choose from the node with the lowest h-score
             for (int index = 0; index < openList.Count; index++)
             {
                 int lowestIndex = 0;
@@ -41,9 +42,9 @@ public class Astar
                     {
                         lowestIndex = i;
                     }
-                    else if (openList[i].FScore == openList[lowestIndex].FScore)    // if f-score of node at index i is not smaller, but equal to the lowest f cost 
+                    else if (openList[i].FScore == openList[lowestIndex].FScore)    // if f-score of node at index i is not smaller, but equal to the lowest f-score 
                     {
-                        if (openList[i].HScore < openList[lowestIndex].HScore)      // get node with the lowest h-cost (node closest to the end) 
+                        if (openList[i].HScore < openList[lowestIndex].HScore)      // get node with the lowest h-score (node closest to the end) 
                         {
                             lowestIndex = i;
                         }
@@ -51,14 +52,9 @@ public class Astar
                 }
                 currentNode = openList[lowestIndex];
 
-                // set current node to the node in Open with the lowest f-cost. (is startNode in first iteration)
-                // If there are multiple of the same f-cost, choose from those with the lowest h-cost
             }
 
-            Debug.Log($"Currentnode position: {currentNode.position}");
-            Debug.Log($"Currentnode g-score: {currentNode.GScore}");
-
-            // if current node == the end node, determine and return path
+            // if current node == the end node (algorithm reached the end), determine and return a path
             if (currentNode.position == endPos)
             {
                 return GetPath(currentNode);
@@ -68,45 +64,32 @@ public class Astar
             openList.Remove(currentNode);
             closedList.Add(currentNode);
 
-            List<Cell> neighbours = grid[currentNode.position.x, currentNode.position.y].GetNeighbours(grid);
-
+            // Neighbour handling
+            List<Cell> neighbours = NodeToCell(currentNode, grid).GetNeighbours(grid);
             for (int i = 0; i < neighbours.Count; i++)
             {
-                Debug.Log($"neighbours[{i}]: {neighbours[i].gridPosition}");
-
+                // create temporary node for neighbour
                 Node neighbourNode = new Node();
                 neighbourNode.position = neighbours[i].gridPosition;
 
+                // if there is a wall in between the current- and neighbouring node, continue to the next neighbour
+                    // NOTE - I initially changed the traversable boolean here as well, but I now continue immediately for a performance improvement.
+                if (CheckForWall(neighbourNode, currentNode, grid)) { continue; }
+
+                // if closedList does not contain the current neighbour, continue to the next neighbour
                 bool isTraversable = true;
-
-                if (CheckForWall(neighbourNode, currentNode, grid) && isTraversable) { isTraversable = false; }
-
-                Debug.Log($"Neighbour isTraversable: {isTraversable}");
-
-                if (isTraversable)   // only do the next loop if the cell is still seen as traversable
+                for (int closedIndex = closedList.Count - 1; closedIndex >= 0; closedIndex--)    // loop over each node in closedList and see if the neighbour is in it
                 {
-                    for (int closedIndex = closedList.Count - 1; closedIndex >= 0; closedIndex--)    // loop over each node in closedList and see if the neighbour is in it
+                    if (closedList[closedIndex].position == neighbours[i].gridPosition)
                     {
-                        if (closedList[closedIndex].position == neighbours[i].gridPosition)
-                        {
-                            isTraversable = false;
-                            break;
-                        }
+                        isTraversable = false;
+                        break;
                     }
                 }
-
-                Debug.Log($"Neighbour isTraversable end: {isTraversable}");
-
-                // check all neighbours
-                // if neighbour is not traversable or in Closed list, continue with the next
-                // if there is a wall in the way of the neigbour, continue as well
-
                 if (!isTraversable) { continue; }
 
-                int tempGScore = CalculateGScore(currentNode);
-                Debug.Log($"Temp G-score: {tempGScore}");
-                Debug.Log($"currentNode G-score: {currentNode.GScore}");
-
+                // if the current neighbour is not in openList, contains is set false
+                    // TODO - continue out of this neighbour iteration
                 bool contains = false;
                 for (int openIndex = openList.Count - 1; openIndex >= 0; openIndex--)    // loop over each node in closedList and see if the neighbour is in it
                 {
@@ -117,93 +100,104 @@ public class Astar
                     }
                 }
 
+                // if current neighbours new path is shorter (g-score is lower than before) or openList does not contain the current neighbour
+                int tempGScore = CalculateGScore(currentNode);
                 if (tempGScore < neighbourNode.GScore || !contains)
                 {
-                    Debug.Log("Hello?");
-                    Debug.Log($"Current node that is assigned to neighbour node: {currentNode}");
+                    // set parent of neighbour to current node
                     neighbourNode.parent = currentNode;
+                    // calculate and set a g- and h-score (determine f-score)
                     neighbourNode.GScore = tempGScore;
                     neighbourNode.HScore = Heuristic(startPos, endPos);
                 }
 
+                // if neigbour is not yet in Open list, add to Open list
                 if (!contains) { openList.Add(neighbourNode); }
-
-                // if neighbours new path is shorter (g-cost is lower than before) or is not in Open list
-                // calculate and set an g- and h-cost (determine f-cost)
-                // set parent of neighbour to current node
-                // if neigbour is not in Open list, add to Open list
-
             }
 
-            if (count > 100)
+            // while exit
+            if (count > 999) 
             {
-                Debug.LogError($"While loop count surpassed 100 iterations, Exiting!");
-                return null;
+                Debug.LogWarning("While loop exceeded 9999 iterations; Exiting!");
+                return GetPath(currentNode);
             }
 
             count++;
-            
-            Debug.Log($"openList count: {openList.Count}");
-            foreach (Node node in openList)
-            {
-                Debug.Log($"Openlist node: {node.position}");
-            }
         }
 
-
-        Debug.Log($"Returning: null");
-        Debug.Log($"Count: {count}");
-        return null;
+        // if open list is empty, return path from latest point
+            // TODO - find lowest f-score in closed list and return a path there
+        return GetPath(currentNode);
     }
 
-    // gets the exact distance between the given position vectors
+    /// <summary>
+    /// returns the g-score for a node with specified parent node
+    /// </summary>
+    /// <param name="_parent"></param>
+    /// <returns></returns>
+    private int CalculateGScore(Node _parent)
+    {
+        int gScore = (int)(_parent.GScore + 1); // 1 = distance between two nodes
+        return gScore;
+    }
+
+    /// <summary>
+    /// Heuristic that returns the exact distance between the specified positions
+    /// <br></br>
+    /// Used to determine the h-score of a node
+    /// </summary>
+    /// <param name="_v1"></param>
+    /// <param name="_v2"></param>
+    /// <returns></returns>
     private int Heuristic(Vector2Int _v1, Vector2Int _v2)
     {
         return (int)Mathf.Floor(Vector2Int.Distance(_v1, _v2));
     }
 
+    /// <summary>
+    /// Returns a list of grid positions of specified nodes and their respective parents
+    /// </summary>
+    /// <param name="_endNode"></param>
+    /// <returns></returns>
     private List<Vector2Int> GetPath(Node _endNode)
     {
-        Debug.Log("getting path");
-
-        // get end node in Closed list add it to a path list
-        // check parent node and add parent node to path list
-        // when start node is reached return the path list
-
         List<Vector2Int> path = new List<Vector2Int>();
-
 
         // reccursively add each position to the path list
         path = AddPosToPath(_endNode, path);
 
-        foreach(Vector2Int pos in path)
-        {
-            Debug.Log($"Path: {pos.x}; {pos.y}");
-        }
-
-        path.Reverse();
+        path.Reverse(); // reverse list, so list starts from the start position instead of the end position
 
         return path;
     }
 
-    private List<Vector2Int> AddPosToPath(Node _current, List<Vector2Int> _path)
+    /// <summary>
+    /// Recursive function that adds node position to specified list and calls itself while passing in its parent node
+    /// </summary>
+    /// <param name="_node"></param>
+    /// <param name="_path"></param>
+    /// <returns></returns>
+    private List<Vector2Int> AddPosToPath(Node _node, List<Vector2Int> _path)
     {
-        Debug.Log($"Reccursion bois!!");
+        _path.Add(_node.position);
 
-        _path.Add(_current.position);
-
-        if (_current.parent != null)
+        if (_node.parent != null)
         {
-            AddPosToPath(_current.parent, _path);
+            AddPosToPath(_node.parent, _path);
         }
 
         return _path;
     }
 
+    /// <summary>
+    /// returns true when there is a wall between the two specified nodes
+    /// </summary>
+    /// <param name="_neighbour"></param>
+    /// <param name="_current"></param>
+    /// <param name="_grid"></param>
+    /// <returns></returns>
     private bool CheckForWall(Node _neighbour, Node _current, Cell[,] _grid)
     {
-        // TODO - implement wall check
-
         // check the direction of the neighbours location.
         int relativeXPosition = _neighbour.position.x - _current.position.x;
         int relativeYPosition = _neighbour.position.y - _current.position.y;
@@ -238,6 +232,7 @@ public class Astar
             }
         }
 
+        // if there is a wall in between the current and neigbouring tile, return true
         if (NodeToCell(_current, _grid).HasWall(neighbourDirection) || NodeToCell(_neighbour, _grid).HasWall(currentDirection)) 
         {
             return true;
@@ -246,12 +241,12 @@ public class Astar
         return false;
     }
 
-    private int CalculateGScore(Node _current) 
-    {
-        int gScore = (int)(_current.GScore + 1);
-        return gScore;    // 1 = distance between the currently selected node and the selected neigbour neighbour
-    }
-
+    /// <summary>
+    /// returns cell at position of the specified node
+    /// </summary>
+    /// <param name="_node"></param>
+    /// <param name="_grid"></param>
+    /// <returns></returns>
     private Cell NodeToCell(Node _node, Cell[,] _grid)
     {
         return _grid[_node.position.x, _node.position.y];
